@@ -12,7 +12,10 @@ import arx5_interface as arx5
 @click.command()
 @click.argument("model")  # ARX arm model: X5 or L5
 @click.argument("interface")  # can bus name (can0 etc.)
+@click.argument("joint_id")
 def calibrate_joint(model: str, interface: str, joint_id: int):
+    if type(joint_id) == str:
+        joint_id = int(joint_id)
     joint_controller_config = arx5.ControllerConfigFactory.get_instance().get_config("joint_controller", 6)
     joint_controller_config.gravity_compensation = False
     robot_config = arx5.RobotConfigFactory.get_instance().get_config(model)
@@ -55,5 +58,5 @@ def check_motor_movements(model: str, interface: str):
 
 if __name__ == "__main__":
     check_motor_movements()
-    # calibrate_joint(0) # 0~5
+    # calibrate_joint()
     # calibrate_gripper()

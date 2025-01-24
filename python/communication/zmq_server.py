@@ -48,7 +48,7 @@ class Arx5Server:
         self.last_cmd_time = time.monotonic()
         self.no_cmd_timeout = no_cmd_timeout
         self.is_reset_to_home = False
-
+        self.last_eef_cmd: npt.NDArray[np.float64] | None = None
     def run(self):
         print(f"Arx5ZmqServer is running on {self.zmq_ip}:{self.zmq_port}")
         while True:
@@ -69,6 +69,7 @@ class Arx5Server:
                         )
                         self.arx5_cartesian_controller.reset_to_home()
                         self.arx5_cartesian_controller.set_to_damping()
+                        self.last_eef_cmd = None
                         del self.arx5_cartesian_controller
                         self.arx5_cartesian_controller = None
                     continue
@@ -111,8 +112,31 @@ class Arx5Server:
                     }
                     self.socket.send_pyobj(reply_msg)
                 elif msg["cmd"] == "SET_EE_POSE":
+                    if self.last_eef_cmd is None:
+                        error_str = "Error: Cannot set EE pose before RESET_TO_HOME. Please check the input."
+                        print(error_str)
+                        self.socket.send_pyobj(
+                            {
+                                "cmd": "SET_EE_POSE",
+                                "data": error_str,
+                            }
+                        )
+                        continue
                     # print(f"Received SET_EE_POSE message, data: {msg['data']}")
                     target_ee_pose = cast(np.ndarray, msg["data"]["ee_pose"])
+
+                    if np.linalg.norm(target_ee_pose - self.last_eef_cmd) > 0.1:
+                        error_str = f"Error: Cannot set EE pose {target_ee_pose} far away from last command: {self.last_eef_cmd}. Please check the input."
+                        print(error_str)
+                        self.socket.send_pyobj(
+                            {
+                                "cmd": "SET_EE_POSE",
+                                "data": error_str,
+                            }
+                        )
+                        continue
+                    self.last_eef_cmd = target_ee_pose.copy()
+                    
                     if msg["data"]["gripper_pos"] is not None:
                         target_gripper_pos = cast(float, msg["data"]["gripper_pos"])
                     else:
@@ -165,6 +189,7 @@ class Arx5Server:
                         "cmd": "RESET_TO_HOME",
                         "data": "OK",
                     }
+                    self.last_eef_cmd = self.arx5_cartesian_controller.get_eef_cmd().pose_6d().copy()
                     self.socket.send_pyobj(reply_msg)
                     self.is_reset_to_home = True
                 elif msg["cmd"] == "SET_TO_DAMPING":
